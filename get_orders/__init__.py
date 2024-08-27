@@ -10,6 +10,16 @@ import json
 db = Database()
 logging.info('Initializing DB Connector Object')
 
+# Connect to the Database and create new tables
+logging.info('Connecting to Database')
+try:
+   db.bind(provider='postgres', user=os.environ.get('database_user'), password=os.environ.get('database_pass'), host=os.environ.get('database_host'), database='postgres')
+   db.generate_mapping(create_tables=True)
+except Exception as e:
+   logging.error("Could not connect to database: " + str(e))
+   raise e
+logging.info('Connected to Database')
+
 class SquareAuth(db.Entity):
    access_token = Optional(str)
    refresh_token = PrimaryKey(str)
@@ -30,22 +40,9 @@ class FoodTruckData(db.Entity):
    store_id = Required(str)
    uid = Required(str)
 
-# Azure Function App
-app = func.FunctionApp()
 
-# Connect to the Database and create new tables
-logging.info('Connecting to Database')
-try:
-   db.bind(provider='postgres', user=os.environ.get('database_user'), password=os.environ.get('database_pass'), host=os.environ.get('database_host'), database='postgres')
-   db.generate_mapping(create_tables=True)
-except Exception as e:
-   logging.error("Could not connect to database: " + str(e))
-   raise e
-logging.info('Connected to Database')
 
-@app.function_name(route="get_orders")
-@app.schedule(schedule="0 30 7 * * *", arg_name="mytimer", run_on_startup=False, use_monitor=True)
-def get_orders(mytimer: func.TimerRequest):
+def main(mytimer: func.TimerRequest) -> None:
    logging.info('get_orders function processed a request.')
 
    # Square access token
@@ -76,7 +73,7 @@ def get_orders(mytimer: func.TimerRequest):
 
    # Set the end time to now
    end_time = datetime.now().replace(microsecond=0).isoformat() + "Z"
-   
+
    for location_id in location_ids:
       cursor = None
       while True:
@@ -106,7 +103,7 @@ def get_orders(mytimer: func.TimerRequest):
          # Organize the orders into a list
          data = order_response.json()
          orders = data.get('orders', [])
-         
+
          for order in orders:
 
             #grab the orders tip amount and the order time
@@ -130,7 +127,7 @@ def get_orders(mytimer: func.TimerRequest):
                      FoodTruckData(
                         revenue_center_desc="Food Truck",
                         order_id = order_id,
-                        item_order_time = created_at, 
+                        item_order_time = created_at,
                         item_number = str(line_item.get("catalog_object_id")),
                         item_name = str(line_item.get("name")),
                         item_quantity = line_item.get("quantity"),
@@ -141,7 +138,7 @@ def get_orders(mytimer: func.TimerRequest):
                         uid = uid
                      )
                   commit()
-                  
+
          # Check if there's more data to fetch
          cursor = data.get('cursor')
          if not cursor:
@@ -151,3 +148,4 @@ def get_orders(mytimer: func.TimerRequest):
       "All orders have been fetched successfully",
       status_code=200
    )
+
